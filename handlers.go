@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -245,11 +246,23 @@ func (h *BotHandlers) handleStatus(b *gotgbot.Bot, ctx *ext.Context) error {
 	} else {
 		msg = fmt.Sprintf("Found %d Uniswap positions:\n\n", len(allPositions))
 
-		// Group positions by wallet
+		// Create a map to store positions by wallet
 		positionsByWallet := make(map[string][]uniswap.Position)
+
+		// Initialize the map with all wallets, even those with no positions
+		for _, wallet := range wallets {
+			positionsByWallet[wallet] = []uniswap.Position{}
+		}
+
+		// Group positions by wallet
 		for _, pos := range allPositions {
-			wallet := pos.Owner.Hex()
-			positionsByWallet[wallet] = append(positionsByWallet[wallet], pos)
+			// Find which wallet this position belongs to
+			for _, wallet := range wallets {
+				if strings.EqualFold(pos.Owner.Hex(), wallet) {
+					positionsByWallet[wallet] = append(positionsByWallet[wallet], pos)
+					break
+				}
+			}
 		}
 
 		// Format each wallet's positions
