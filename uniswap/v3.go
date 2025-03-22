@@ -14,6 +14,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// Common token addresses
+const (
+	USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+	WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+	USDT_ADDRESS = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+)
+
+// Common pool addresses
+const (
+	USDC_WETH_POOL = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
+	WETH_USDT_POOL = "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
+)
+
+// Fee tiers (in basis points)
+const (
+	FEE_LOW    = 500   // 0.05%
+	FEE_MEDIUM = 3000  // 0.3%
+	FEE_HIGH   = 10000 // 1%
+)
+
 // V3 contract addresses
 var (
 	// Uniswap V3 NFT Position Manager contract address
@@ -51,6 +71,7 @@ type V3ClientImpl struct {
 	positionManagerABI *abi.ABI
 	erc721ABI          *abi.ABI
 	erc20ABI           *abi.ABI
+	factoryABI         *abi.ABI
 	logger             *zap.SugaredLogger
 }
 
@@ -72,6 +93,11 @@ func NewV3Client(ethClient *ethclient.Client, logger *zap.SugaredLogger) (V3Clie
 		return nil, fmt.Errorf("failed to parse ERC20 ABI: %w", err)
 	}
 
+	factoryABI, err := abi.JSON(strings.NewReader(factoryABIJson))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse factory ABI: %w", err)
+	}
+
 	logger.Infow("Initialized Uniswap V3 client",
 		"positionManagerAddress", V3PositionManagerAddress.Hex(),
 		"factoryAddress", V3FactoryAddress.Hex())
@@ -81,6 +107,7 @@ func NewV3Client(ethClient *ethclient.Client, logger *zap.SugaredLogger) (V3Clie
 		positionManagerABI: &positionManagerABI,
 		erc721ABI:          &erc721ABI,
 		erc20ABI:           &erc20ABI,
+		factoryABI:         &factoryABI,
 		logger:             logger,
 	}, nil
 }
@@ -396,40 +423,73 @@ func (c *V3ClientImpl) getTokenDecimals(ctx context.Context, tokenAddress common
 	return decimals
 }
 
-// getCurrentSqrtPriceX96 gets the current sqrt price for a pool
+// getCurrentSqrtPriceX96 gets the current sqrt price for a pool by:
+// 1. Getting the pool address from the factory
+// 2. Calling slot0() on the pool to get the current sqrt price
 func (c *V3ClientImpl) getCurrentSqrtPriceX96(ctx context.Context, token0, token1 common.Address, fee uint64) (*big.Int, error) {
 	c.logger.Debugw("Getting current sqrt price", "token0", token0.Hex(), "token1", token1.Hex(), "fee", fee)
 
-	// First, get the pool address from the factory
-	// This would be a real API call in a full implementation
-	// For now, we'll use a placeholder value
+	// Convert fee to uint24 for the contract call
+	fee24 := uint32(fee)
 
-	// In a real implementation, we would:
-	// 1. Call factory.getPool(token0, token1, fee) to get the pool address
-	// 2. Call pool.slot0() to get the current sqrt price
-
-	// For demonstration, we'll return a realistic value based on the tokens
-	// This simulates what we would get from a real API call
-	sqrtPriceX96 := new(big.Int)
-
-	if token0.Hex() == "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" &&
-		token1.Hex() == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" {
-		// USDC/WETH pair
-		c.logger.Debugw("Using realistic sqrt price for USDC/WETH pair")
-		sqrtPriceX96.SetString("1825381432580523276230", 10)
-		return sqrtPriceX96, nil
-	} else if token0.Hex() == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" &&
-		token1.Hex() == "0xdAC17F958D2ee523a2206206994597C13D831ec7" {
-		// WETH/USDT pair
-		c.logger.Debugw("Using realistic sqrt price for WETH/USDT pair")
-		sqrtPriceX96.SetString("1825381432580523276230", 10)
-		return sqrtPriceX96, nil
+	// Get pool address from factory using factory ABI
+	callData, err := c.factoryABI.Pack("getPool", token0, token1, fee24)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack getPool call: %w", err)
 	}
 
-	// Default value for other pairs
-	c.logger.Debugw("Using default sqrt price for unknown pair")
-	sqrtPriceX96.SetString("1825381432580523276230", 10)
-	return sqrtPriceX96, nil
+	result, err := c.ethClient.CallContract(ctx, ethereum.CallMsg{
+		To:   &V3FactoryAddress,
+		Data: callData,
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pool address: %w", err)
+	}
+
+	var poolAddress common.Address
+	err = c.factoryABI.UnpackIntoInterface(&poolAddress, "getPool", result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack pool address: %w", err)
+	}
+
+	if poolAddress == (common.Address{}) {
+		return nil, fmt.Errorf("pool does not exist")
+	}
+
+	// Call slot0() on the pool to get the current sqrt price
+	poolABI, err := abi.JSON(strings.NewReader(poolABIJson))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pool ABI: %w", err)
+	}
+
+	callData, err = poolABI.Pack("slot0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack slot0 call: %w", err)
+	}
+
+	result, err = c.ethClient.CallContract(ctx, ethereum.CallMsg{
+		To:   &poolAddress,
+		Data: callData,
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call slot0: %w", err)
+	}
+
+	var slot0Result struct {
+		SqrtPriceX96               *big.Int
+		Tick                       int32
+		ObservationIndex           uint16
+		ObservationCardinality     uint16
+		ObservationCardinalityNext uint16
+		FeeProtocol                uint8
+		Unlocked                   bool
+	}
+	err = poolABI.UnpackIntoInterface(&slot0Result, "slot0", result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack slot0 result: %w", err)
+	}
+
+	return slot0Result.SqrtPriceX96, nil
 }
 
 // calculateAmounts calculates the amounts of token0 and token1 in a position
@@ -865,4 +925,83 @@ const erc20ABIJson = `[
 		"stateMutability": "view",
 		"type": "function"
 	}
+]`
+
+// Add the pool ABI
+const poolABIJson = `[
+	{
+		"inputs": [],
+		"name": "slot0",
+		"outputs": [
+			{
+				"internalType": "uint160",
+				"name": "sqrtPriceX96",
+				"type": "uint160"
+			},
+			{
+				"internalType": "int24",
+				"name": "tick",
+				"type": "int24"
+			},
+			{
+				"internalType": "uint16",
+				"name": "observationIndex",
+				"type": "uint16"
+			},
+			{
+				"internalType": "uint16",
+				"name": "observationCardinality",
+				"type": "uint16"
+			},
+			{
+				"internalType": "uint16",
+				"name": "observationCardinalityNext",
+				"type": "uint16"
+			},
+			{
+				"internalType": "uint8",
+				"name": "feeProtocol",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bool",
+				"name": "unlocked",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]`
+
+const factoryABIJson = `[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "tokenA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "tokenB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint24",
+                "name": "fee",
+                "type": "uint24"
+            }
+        ],
+        "name": "getPool",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "pool",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
 ]`
