@@ -115,13 +115,15 @@ type APIClient struct {
 
 // NewAPIClient creates a new Uniswap API client
 func NewAPIClient(logger *zap.SugaredLogger, apiKey string) (*APIClient, error) {
-	return &APIClient{
+	client := &APIClient{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		logger: logger,
 		apiKey: apiKey,
-	}, nil
+	}
+	var _ Client = client
+	return client, nil
 }
 
 // GetPositions fetches all Uniswap positions for a given wallet address using the subgraph API.
@@ -209,7 +211,6 @@ func (c *APIClient) getVersionPositions(ctx context.Context, wallet common.Addre
 			}
 		}`, strings.ToLower(wallet.Hex()))
 	}
-
 	resp, err := c.executeGraphQLQuery(ctx, url, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute GraphQL query: %w", err)
