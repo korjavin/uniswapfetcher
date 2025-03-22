@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
@@ -41,8 +42,12 @@ func main() {
 	}
 	defer uniswapClient.Close()
 
-	// Initialize bot
-	bot, err := gotgbot.NewBot(token, &gotgbot.BotOpts{})
+	// Initialize bot with increased timeout
+	bot, err := gotgbot.NewBot(token, &gotgbot.BotOpts{
+		RequestOpts: &gotgbot.RequestOpts{
+			Timeout: 60 * time.Second, // Increase timeout to 60 seconds
+		},
+	})
 	if err != nil {
 		sugar.Fatalf("Failed to create bot: %v", err)
 	}
