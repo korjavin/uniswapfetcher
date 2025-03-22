@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // Client is the interface for interacting with Uniswap
@@ -82,4 +86,52 @@ func formatBigFloat(n *big.Float) string {
 
 	// Format with 4 decimal places
 	return fmt.Sprintf("%.4f", n)
+}
+
+// parsePositionData parses position data from the API response
+func parsePositionData(data *PositionData) []Position {
+	var positions []Position
+	for _, p := range data.Positions {
+		id, _ := new(big.Int).SetString(p.ID, 10)
+		pos := Position{
+			ID:             id,
+			Version:        VersionV3, // Default to V3
+			Owner:          common.HexToAddress(p.Owner),
+			Amount0:        parseBigInt(p.DepositedToken0),
+			Amount1:        parseBigInt(p.DepositedToken1),
+			UnclaimedFees0: parseBigInt(p.CollectedFeesToken0),
+			UnclaimedFees1: parseBigInt(p.CollectedFeesToken1),
+			Token0: Token{
+				Symbol:   p.Token0.Symbol,
+				Decimals: uint8(mustParseInt(p.Token0.Decimals)),
+			},
+			Token1: Token{
+				Symbol:   p.Token1.Symbol,
+				Decimals: uint8(mustParseInt(p.Token1.Decimals)),
+			},
+			CreatedAt:    time.Now(), // Use block timestamp if available
+			CurrentPrice: parseBigFloat(p.Pool.Token0Price),
+			PriceLower:   nil, // Calculate from tick range if available
+			PriceUpper:   nil, // Calculate from tick range if available
+		}
+		positions = append(positions, pos)
+	}
+	return positions
+}
+
+func mustParseInt(s string) int64 {
+	i, _ := strconv.ParseInt(s, 10, 64)
+	return i
+}
+
+func parseBigInt(s string) *big.Int {
+	i := new(big.Int)
+	i.SetString(s, 10)
+	return i
+}
+
+func parseBigFloat(s string) *big.Float {
+	f := new(big.Float)
+	f.SetString(s)
+	return f
 }

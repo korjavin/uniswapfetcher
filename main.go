@@ -16,10 +16,14 @@ func main() {
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
-	// Get bot token from environment
+	// Get environment variables
 	token := os.Getenv("TELEGRAM_TOKEN")
+	graphApiKey := os.Getenv("GRAPH_API_KEY")
 	if token == "" {
 		sugar.Fatal("TELEGRAM_TOKEN environment variable is required")
+	}
+	if graphApiKey == "" {
+		sugar.Fatal("GRAPH_API_KEY environment variable is required")
 	}
 
 	// Initialize database
@@ -29,7 +33,7 @@ func main() {
 	}
 
 	// Initialize Uniswap client with API calls instead of Infura
-	uniswapClient, err := uniswap.NewAPIClient(sugar)
+	uniswapClient, err := uniswap.NewAPIClient(sugar, graphApiKey)
 	if err != nil {
 		sugar.Fatalf("Failed to initialize Uniswap client: %v", err)
 	}

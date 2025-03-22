@@ -67,7 +67,15 @@ graph TD
 
 - Docker (for containerized deployment)
 - Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
-- Infura API Key (sign up at [infura.io](https://infura.io))
+- The Graph API Key (required for accessing Uniswap data)
+
+### Getting The Graph API Key
+
+1. Visit https://thegraph.com/studio/apikeys
+2. Sign in with your GitHub account
+3. Click "Create API Key"
+4. Name your key and create it
+5. Copy the API key for use in the application
 
 ### Running with Docker
 
@@ -75,7 +83,7 @@ graph TD
 docker run -d \
   --name uniswap-fetcher \
   -e TELEGRAM_TOKEN=your_telegram_token \
-  -e INFURA_API_KEY=your_infura_key \
+  -e GRAPH_API_KEY=your_graph_api_key \
   -e LOG_LEVEL=info \
   -v uniswap-data:/app/data \
   ghcr.io/korjavin/uniswapfetcher:latest
@@ -86,7 +94,7 @@ docker run -d \
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TELEGRAM_TOKEN` | Your Telegram bot token (required) | - |
-| `INFURA_API_KEY` | Your Infura API key (required) | - |
+| `GRAPH_API_KEY` | Your The Graph API key (required) | - |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | info |
 
 ### Building from Source
@@ -110,7 +118,7 @@ docker run -d \
 4. Run locally
    ```bash
    export TELEGRAM_TOKEN=your_telegram_token
-   export INFURA_API_KEY=your_infura_key
+   export GRAPH_API_KEY=your_graph_api_key
    ./bot
    ```
 
