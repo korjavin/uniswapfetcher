@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -16,7 +17,7 @@ import (
 var (
 	// Uniswap V4 Pool Manager contract address
 	V4PoolManagerAddress = common.HexToAddress("0x8D5CF870354ffFa6F7fB096A2C247A59DA0B7E72") // Example address, replace with actual
-	
+
 	// Uniswap V4 Factory contract address
 	V4FactoryAddress = common.HexToAddress("0x1F98431c8aD98523631AE4a59f267346ea31F984") // Example address, replace with actual
 )
@@ -29,35 +30,27 @@ type V4Client interface {
 
 // V4ClientImpl implements the V4Client interface
 type V4ClientImpl struct {
-	ethClient   *ethclient.Client
-	poolManager *bind.BoundContract // This would be the actual contract binding
-	factory     *bind.BoundContract // This would be the actual contract binding
-	logger      *zap.SugaredLogger
+	ethClient      *ethclient.Client
+	poolManagerABI *abi.ABI
+	logger         *zap.SugaredLogger
 }
 
 // NewV4Client creates a new Uniswap V4 client
 func NewV4Client(ethClient *ethclient.Client, logger *zap.SugaredLogger) (V4Client, error) {
-	// In a real implementation, we would initialize the contract bindings here
-	// For example:
-	// poolManager, err := v4.NewPoolManager(V4PoolManagerAddress, ethClient)
-	// if err != nil {
-	//     return nil, fmt.Errorf("failed to initialize pool manager contract: %w", err)
-	// }
-	//
-	// factory, err := v4.NewUniswapV4Factory(V4FactoryAddress, ethClient)
-	// if err != nil {
-	//     return nil, fmt.Errorf("failed to initialize factory contract: %w", err)
-	// }
+	// Parse ABIs for the contracts we need to interact with
+	poolManagerABI, err := abi.JSON(strings.NewReader(poolManagerABIJson))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pool manager ABI: %w", err)
+	}
 
-	logger.Infow("Initialized Uniswap V4 client", 
+	logger.Infow("Initialized Uniswap V4 client",
 		"poolManagerAddress", V4PoolManagerAddress.Hex(),
 		"factoryAddress", V4FactoryAddress.Hex())
 
 	return &V4ClientImpl{
-		ethClient: ethClient,
-		// poolManager: poolManager,
-		// factory: factory,
-		logger: logger,
+		ethClient:      ethClient,
+		poolManagerABI: &poolManagerABI,
+		logger:         logger,
 	}, nil
 }
 
@@ -65,43 +58,66 @@ func NewV4Client(ethClient *ethclient.Client, logger *zap.SugaredLogger) (V4Clie
 func (c *V4ClientImpl) GetPositions(ctx context.Context, walletAddress common.Address) ([]Position, error) {
 	c.logger.Infow("Fetching V4 positions", "wallet", walletAddress.Hex())
 
-	// In a real implementation, we would:
-	// 1. Query the pool manager contract to get the positions for the wallet
-	// 2. For each position, query the details
-	// 3. Calculate unclaimed fees
-	// 4. Format the results
+	// Note: Uniswap V4 is still in development and the exact contract structure may change
+	// This is a simplified implementation that may need to be updated when V4 is fully released
 
-	// This is a placeholder implementation
-	// In a real implementation, we would query the blockchain
-	
-	// Simulate a delay to mimic blockchain query time
-	select {
-	case <-time.After(1 * time.Second):
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	// For now, we'll return a simulated position with real token data
+	// In a real implementation, we would query the blockchain for actual positions
+
+	// Get token info for common tokens
+	token0Address := common.HexToAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48") // USDC
+	token1Address := common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") // WETH
+
+	token0Symbol, token0Decimals := "USDC", uint8(6)
+	token1Symbol, token1Decimals := "WETH", uint8(18)
+
+	// Check if we have the token info cached
+	if info, ok := TokenAddressToSymbol[strings.ToLower(token0Address.Hex())]; ok {
+		token0Symbol, token0Decimals = info.Symbol, info.Decimals
 	}
 
-	// Return a mock position for demonstration
-	mockPosition := Position{
+	if info, ok := TokenAddressToSymbol[strings.ToLower(token1Address.Hex())]; ok {
+		token1Symbol, token1Decimals = info.Symbol, info.Decimals
+	}
+
+	// Create a simulated position
+	position := Position{
 		ID:             big.NewInt(789012),
 		Version:        VersionV4,
 		Owner:          walletAddress,
-		Token0:         Token{Address: common.HexToAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), Symbol: "USDC", Decimals: 6},
-		Token1:         Token{Address: common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), Symbol: "WETH", Decimals: 18},
-		Amount0:        big.NewInt(2000000000), // 2000 USDC
-		Amount1:        big.NewInt(1000000000000000000), // 1.0 WETH
-		FeeTier:        500, // 0.05%
+		Token0:         Token{Address: token0Address, Symbol: token0Symbol, Decimals: token0Decimals},
+		Token1:         Token{Address: token1Address, Symbol: token1Symbol, Decimals: token1Decimals},
+		Amount0:        big.NewInt(2000000000),               // 2000 USDC
+		Amount1:        big.NewInt(1000000000000000000),      // 1.0 WETH
+		FeeTier:        500,                                  // 0.05%
 		CreatedAt:      time.Now().Add(-15 * 24 * time.Hour), // 15 days ago
-		UnclaimedFees0: big.NewInt(100000000), // 100 USDC
-		UnclaimedFees1: big.NewInt(50000000000000000), // 0.05 WETH
+		UnclaimedFees0: big.NewInt(100000000),                // 100 USDC
+		UnclaimedFees1: big.NewInt(50000000000000000),        // 0.05 WETH
 		PriceLower:     big.NewFloat(1800.0),
 		PriceUpper:     big.NewFloat(2200.0),
 		CurrentPrice:   big.NewFloat(2000.0),
 	}
 
-	c.logger.Infow("Fetched V4 position", 
-		"positionId", mockPosition.ID.String(),
-		"tokenPair", fmt.Sprintf("%s/%s", mockPosition.Token0.Symbol, mockPosition.Token1.Symbol))
+	c.logger.Infow("Fetched V4 position",
+		"positionId", position.ID.String(),
+		"tokenPair", fmt.Sprintf("%s/%s", position.Token0.Symbol, position.Token1.Symbol))
 
-	return []Position{mockPosition}, nil
+	return []Position{position}, nil
 }
+
+// ABIs for the contracts we need to interact with
+const poolManagerABIJson = `[
+	{
+		"inputs": [],
+		"name": "getPoolManager",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]`
