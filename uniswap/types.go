@@ -51,6 +51,11 @@ type Position struct {
 	PriceUpper   *big.Float `json:"priceUpper"`
 	CurrentPrice *big.Float `json:"currentPrice"`
 
+	DepositedToken0 *big.Int `json:"depositedToken0"`
+	DepositedToken1 *big.Int `json:"depositedToken1"`
+	WithdrawnToken0 *big.Int `json:"withdrawnToken0"`
+	WithdrawnToken1 *big.Int `json:"withdrawnToken1"`
+
 	// V4 specific fields (if any)
 	// Add V4 specific fields here as needed
 }

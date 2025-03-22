@@ -30,7 +30,7 @@ func FormatPositionSummary(position Position) PositionSummary {
 		ID:            position.ID.String(),
 		Version:       string(position.Version),
 		TokenPair:     fmt.Sprintf("%s/%s", position.Token0.Symbol, position.Token1.Symbol),
-		Amounts:       fmt.Sprintf("%s %s, %s %s", formatBigInt(position.Amount0, int(position.Token0.Decimals)), position.Token0.Symbol, formatBigInt(position.Amount1, int(position.Token1.Decimals)), position.Token1.Symbol),
+		Amounts:       fmt.Sprintf("%s %s, %s %s", formatBigInt(position.DepositedToken0, int(position.Token0.Decimals)), position.Token0.Symbol, formatBigInt(position.DepositedToken1, int(position.Token1.Decimals)), position.Token1.Symbol),
 		PriceRange:    fmt.Sprintf("%s - %s", formatBigFloat(position.PriceLower), formatBigFloat(position.PriceUpper)),
 		UnclaimedFees: fmt.Sprintf("%s %s, %s %s", formatBigInt(position.UnclaimedFees0, int(position.Token0.Decimals)), position.Token0.Symbol, formatBigInt(position.UnclaimedFees1, int(position.Token1.Decimals)), position.Token1.Symbol),
 		CreatedAt:     position.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -52,9 +52,19 @@ func formatBigInt(n *big.Int, decimals int) string {
 		return value.String()
 	}
 
-	// Convert to a decimal representation
-	// First, get the integer part
+	// For display purposes, we want to show the actual value, not the raw value
+	// For example, if the token has 6 decimals and the value is 1000000, we want to show 1
+	// If the token has 18 decimals and the value is 1000000000000000000, we want to show 1
 	divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+
+	// Check if the value is a multiple of the divisor (no fractional part)
+	if new(big.Int).Mod(value, divisor).Cmp(big.NewInt(0)) == 0 {
+		// If it's a clean division, just show the integer part
+		return new(big.Int).Div(value, divisor).String()
+	}
+
+	// For values that have a fractional part, we'll format with the appropriate decimal places
+	// First, get the integer part
 	intPart := new(big.Int).Div(value, divisor)
 
 	// Then, get the fractional part

@@ -72,8 +72,34 @@ type PositionData struct {
 // V4PositionData represents the structure of position data in GraphQL responses for V4
 type V4PositionData struct {
 	Positions []struct {
-		ID    string `json:"id"`
-		Owner string `json:"owner"`
+		ID                 string `json:"id"`
+		Owner              string `json:"owner"`
+		CreatedAtTimestamp string `json:"createdAtTimestamp"`
+		Pool               struct {
+			Token0 struct {
+				ID       string `json:"id"`
+				Symbol   string `json:"symbol"`
+				Decimals string `json:"decimals"`
+			} `json:"token0"`
+			Token1 struct {
+				ID       string `json:"id"`
+				Symbol   string `json:"symbol"`
+				Decimals string `json:"decimals"`
+			} `json:"token1"`
+			SqrtPrice string `json:"sqrtPrice"`
+			Tick      string `json:"tick"`
+			Liquidity string `json:"liquidity"`
+			FeeTier   string `json:"feeTier"`
+		} `json:"pool"`
+		Liquidity       string `json:"liquidity"`
+		TickLower       string `json:"tickLower"`
+		TickUpper       string `json:"tickUpper"`
+		DepositedToken0 string `json:"depositedToken0"`
+		DepositedToken1 string `json:"depositedToken1"`
+		WithdrawnToken0 string `json:"withdrawnToken0"`
+		WithdrawnToken1 string `json:"withdrawnToken1"`
+		CollectedToken0 string `json:"collectedToken0"`
+		CollectedToken1 string `json:"collectedToken1"`
 	} `json:"positions"`
 }
 
@@ -159,11 +185,27 @@ func (c *APIClient) getVersionPositions(ctx context.Context, wallet common.Addre
 		}`, strings.ToLower(wallet.Hex()))
 	} else if version == VersionV4 {
 		// V4 has a different schema, use appropriate fields
-		// Based on the error, Position doesn't have a pool field, so let's use a simpler query
 		query = fmt.Sprintf(`{
 			positions(where: { owner: "%s" }) {
 				id
 				owner
+				createdAtTimestamp
+				pool {
+					token0 {
+						id
+						symbol
+						decimals
+					}
+					token1 {
+						id
+						symbol
+						decimals
+					}
+					sqrtPrice
+					tick
+					liquidity
+					feeTier
+				}
 			}
 		}`, strings.ToLower(wallet.Hex()))
 	}
@@ -210,8 +252,14 @@ func (c *APIClient) executeGraphQLQuery(ctx context.Context, url, query string) 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+	obfuscatedKey := c.apiKey
+	if len(obfuscatedKey) > 4 {
+		obfuscatedKey = strings.Repeat("*", len(obfuscatedKey)-4) + obfuscatedKey[len(obfuscatedKey)-4:]
+	}
+
 	c.logger.Debugw("Making GraphQL request",
 		"url", url,
+		"apiKey", obfuscatedKey,
 		"bodyLength", len(body))
 
 	resp, err := c.httpClient.Do(req)
@@ -281,18 +329,20 @@ func (c *APIClient) parsePositionData(data *PositionData, version PositionVersio
 				Symbol:   p.Token1.Symbol,
 				Decimals: uint8(token1Decimals),
 			},
-			Amount0:        amount0,
-			Amount1:        amount1,
-			UnclaimedFees0: stringToBigInt(p.CollectedFeesToken0),
-			UnclaimedFees1: stringToBigInt(p.CollectedFeesToken1),
-			FeeTier:        uint32(feeTier),
-			CreatedAt:      time.Now(),
-			TickLower:      int(tickLower),
-			TickUpper:      int(tickUpper),
-			Liquidity:      stringToBigInt(p.Liquidity),
-			CurrentPrice:   stringToBigFloat(p.Pool.Token0Price),
-			PriceLower:     tickToPrice(tickLower),
-			PriceUpper:     tickToPrice(tickUpper),
+			Amount0:         amount0,
+			Amount1:         amount1,
+			DepositedToken0: stringToBigInt(p.DepositedToken0),
+			DepositedToken1: stringToBigInt(p.DepositedToken1),
+			UnclaimedFees0:  stringToBigInt(p.CollectedFeesToken0),
+			UnclaimedFees1:  stringToBigInt(p.CollectedFeesToken1),
+			FeeTier:         uint32(feeTier),
+			CreatedAt:       time.Now(),
+			TickLower:       int(tickLower),
+			TickUpper:       int(tickUpper),
+			Liquidity:       stringToBigInt(p.Liquidity),
+			CurrentPrice:    stringToBigFloat(p.Pool.Token0Price),
+			PriceLower:      tickToPrice(tickLower),
+			PriceUpper:      tickToPrice(tickUpper),
 		}
 		positions = append(positions, pos)
 	}
@@ -303,27 +353,61 @@ func (c *APIClient) parsePositionData(data *PositionData, version PositionVersio
 func (c *APIClient) parseV4PositionData(data *V4PositionData) []Position {
 	var positions []Position
 	for _, p := range data.Positions {
-		// For V4, we only have basic position information
-		// Create a position with minimal information
+		// Parse token decimals
+		token0Decimals, _ := strconv.ParseUint(p.Pool.Token0.Decimals, 10, 8)
+		token1Decimals, _ := strconv.ParseUint(p.Pool.Token1.Decimals, 10, 8)
+		feeTier, _ := strconv.ParseUint(p.Pool.FeeTier, 10, 32)
+
+		// Parse timestamp
+		timestamp, err := strconv.ParseInt(p.CreatedAtTimestamp, 10, 64)
+		if err != nil {
+			timestamp = time.Now().Unix()
+		}
+
+		// Parse ticks
+		tickLower, _ := strconv.ParseInt(p.TickLower, 10, 64)
+		tickUpper, _ := strconv.ParseInt(p.TickUpper, 10, 64)
+
+		// Parse liquidity, deposited, withdrawn, and collected tokens
+		liquidity := stringToBigInt(p.Liquidity)
+		depositedToken0 := stringToBigInt(p.DepositedToken0)
+		depositedToken1 := stringToBigInt(p.DepositedToken1)
+		withdrawnToken0 := stringToBigInt(p.WithdrawnToken0)
+		withdrawnToken1 := stringToBigInt(p.WithdrawnToken1)
+		collectedToken0 := stringToBigInt(p.CollectedToken0)
+		collectedToken1 := stringToBigInt(p.CollectedToken1)
+
+		amount0 := new(big.Int).Sub(depositedToken0, withdrawnToken0)
+		amount1 := new(big.Int).Sub(depositedToken1, withdrawnToken1)
+
 		pos := Position{
 			ID:      stringToBigInt(p.ID),
 			Version: VersionV4,
 			Owner:   common.HexToAddress(p.Owner),
-			// Set default values for fields not available in V4 subgraph
 			Token0: Token{
-				Symbol:   "Unknown", // We don't have token info in this simplified query
-				Decimals: 18,        // Default to 18 decimals
+				Address:  common.HexToAddress(p.Pool.Token0.ID),
+				Symbol:   p.Pool.Token0.Symbol,
+				Decimals: uint8(token0Decimals),
 			},
 			Token1: Token{
-				Symbol:   "Unknown", // We don't have token info in this simplified query
-				Decimals: 18,        // Default to 18 decimals
+				Address:  common.HexToAddress(p.Pool.Token1.ID),
+				Symbol:   p.Pool.Token1.Symbol,
+				Decimals: uint8(token1Decimals),
 			},
-			Amount0:        big.NewInt(0),
-			Amount1:        big.NewInt(0),
-			UnclaimedFees0: big.NewInt(0),
-			UnclaimedFees1: big.NewInt(0),
-			FeeTier:        0,
-			CreatedAt:      time.Now(),
+			Amount0:         amount0,
+			Amount1:         amount1,
+			UnclaimedFees0:  collectedToken0,
+			UnclaimedFees1:  collectedToken1,
+			FeeTier:         uint32(feeTier),
+			CreatedAt:       time.Unix(timestamp, 0),
+			TickLower:       int(tickLower),
+			TickUpper:       int(tickUpper),
+			Liquidity:       liquidity,
+			CurrentPrice:    calculateCurrentPrice(p.Pool.SqrtPrice),
+			DepositedToken0: depositedToken0,
+			DepositedToken1: depositedToken1,
+			WithdrawnToken0: withdrawnToken0,
+			WithdrawnToken1: withdrawnToken1,
 		}
 		positions = append(positions, pos)
 	}
