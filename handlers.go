@@ -56,15 +56,36 @@ func (h *BotHandlers) handleAddWallet(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Extract wallet address from command
 	args := ctx.Args()
-	if len(args) < 1 {
+	h.logger.Debugw("Command arguments", "args", args)
+
+	// The first argument is the command itself, so we need at least 2 arguments
+	if len(args) < 2 {
 		_, err := ctx.EffectiveMessage.Reply(b, "Please provide a wallet address: /add_wallet <address>", &gotgbot.SendMessageOpts{})
 		return err
 	}
 
-	walletAddress := args[0]
+	walletAddress := args[1] // Use the second argument, which is the actual address
 
 	// Validate Ethereum address
+	h.logger.Debugw("Validating Ethereum address", "address", walletAddress, "isValid", common.IsHexAddress(walletAddress))
+
+	// Check if address has 0x prefix
+	if len(walletAddress) < 2 || walletAddress[:2] != "0x" {
+		h.logger.Debugw("Address missing 0x prefix", "address", walletAddress)
+		_, err := ctx.EffectiveMessage.Reply(b, "Ethereum address must start with '0x'. Please provide a valid address.", &gotgbot.SendMessageOpts{})
+		return err
+	}
+
+	// Check if address has correct length
+	if len(walletAddress) != 42 {
+		h.logger.Debugw("Address has incorrect length", "address", walletAddress, "length", len(walletAddress))
+		_, err := ctx.EffectiveMessage.Reply(b, "Ethereum address must be 42 characters long (including '0x' prefix). Please provide a valid address.", &gotgbot.SendMessageOpts{})
+		return err
+	}
+
+	// Use go-ethereum's validation
 	if !common.IsHexAddress(walletAddress) {
+		h.logger.Debugw("Address failed go-ethereum validation", "address", walletAddress)
 		_, err := ctx.EffectiveMessage.Reply(b, "Invalid Ethereum address format. Please provide a valid address.", &gotgbot.SendMessageOpts{})
 		return err
 	}
@@ -89,15 +110,36 @@ func (h *BotHandlers) handleRemoveWallet(b *gotgbot.Bot, ctx *ext.Context) error
 
 	// Extract wallet address from command
 	args := ctx.Args()
-	if len(args) < 1 {
+	h.logger.Debugw("Command arguments for remove_wallet", "args", args)
+
+	// The first argument is the command itself, so we need at least 2 arguments
+	if len(args) < 2 {
 		_, err := ctx.EffectiveMessage.Reply(b, "Please provide a wallet address: /remove_wallet <address>", &gotgbot.SendMessageOpts{})
 		return err
 	}
 
-	walletAddress := args[0]
+	walletAddress := args[1] // Use the second argument, which is the actual address
 
 	// Validate Ethereum address
+	h.logger.Debugw("Validating Ethereum address for removal", "address", walletAddress, "isValid", common.IsHexAddress(walletAddress))
+
+	// Check if address has 0x prefix
+	if len(walletAddress) < 2 || walletAddress[:2] != "0x" {
+		h.logger.Debugw("Address missing 0x prefix", "address", walletAddress)
+		_, err := ctx.EffectiveMessage.Reply(b, "Ethereum address must start with '0x'. Please provide a valid address.", &gotgbot.SendMessageOpts{})
+		return err
+	}
+
+	// Check if address has correct length
+	if len(walletAddress) != 42 {
+		h.logger.Debugw("Address has incorrect length", "address", walletAddress, "length", len(walletAddress))
+		_, err := ctx.EffectiveMessage.Reply(b, "Ethereum address must be 42 characters long (including '0x' prefix). Please provide a valid address.", &gotgbot.SendMessageOpts{})
+		return err
+	}
+
+	// Use go-ethereum's validation
 	if !common.IsHexAddress(walletAddress) {
+		h.logger.Debugw("Address failed go-ethereum validation", "address", walletAddress)
 		_, err := ctx.EffectiveMessage.Reply(b, "Invalid Ethereum address format. Please provide a valid address.", &gotgbot.SendMessageOpts{})
 		return err
 	}
