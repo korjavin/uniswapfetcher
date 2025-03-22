@@ -61,26 +61,37 @@ func (c *V4ClientImpl) GetPositions(ctx context.Context, walletAddress common.Ad
 	// Note: Uniswap V4 is still in development and the exact contract structure may change
 	// This is a simplified implementation that may need to be updated when V4 is fully released
 
-	// For now, we'll return a simulated position with real token data
-	// In a real implementation, we would query the blockchain for actual positions
+	c.logger.Debugw("Would make Infura API call here", "method", "getPositions", "walletAddress", walletAddress.Hex())
+	c.logger.Debugw("Simulating blockchain query for V4 positions")
 
 	// Get token info for common tokens
 	token0Address := common.HexToAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48") // USDC
 	token1Address := common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") // WETH
+
+	c.logger.Debugw("Getting token info", "token0", token0Address.Hex(), "token1", token1Address.Hex())
 
 	token0Symbol, token0Decimals := "USDC", uint8(6)
 	token1Symbol, token1Decimals := "WETH", uint8(18)
 
 	// Check if we have the token info cached
 	if info, ok := TokenAddressToSymbol[strings.ToLower(token0Address.Hex())]; ok {
+		c.logger.Debugw("Using cached token0 info", "symbol", info.Symbol, "decimals", info.Decimals)
 		token0Symbol, token0Decimals = info.Symbol, info.Decimals
 	}
 
 	if info, ok := TokenAddressToSymbol[strings.ToLower(token1Address.Hex())]; ok {
+		c.logger.Debugw("Using cached token1 info", "symbol", info.Symbol, "decimals", info.Decimals)
 		token1Symbol, token1Decimals = info.Symbol, info.Decimals
 	}
 
-	// Create a simulated position
+	// In a real implementation, we would make Infura API calls to:
+	// 1. Query the pool manager contract to get positions for this wallet
+	// 2. Get position details for each position
+	// 3. Calculate amounts and fees
+	c.logger.Debugw("Simulating position data calculation")
+
+	// Create a simulated position with realistic values
+	// This simulates what we would get from real blockchain queries
 	position := Position{
 		ID:             big.NewInt(789012),
 		Version:        VersionV4,
@@ -100,7 +111,9 @@ func (c *V4ClientImpl) GetPositions(ctx context.Context, walletAddress common.Ad
 
 	c.logger.Infow("Fetched V4 position",
 		"positionId", position.ID.String(),
-		"tokenPair", fmt.Sprintf("%s/%s", position.Token0.Symbol, position.Token1.Symbol))
+		"tokenPair", fmt.Sprintf("%s/%s", position.Token0.Symbol, position.Token1.Symbol),
+		"amount0", formatBigInt(position.Amount0, int(position.Token0.Decimals)),
+		"amount1", formatBigInt(position.Amount1, int(position.Token1.Decimals)))
 
 	return []Position{position}, nil
 }
