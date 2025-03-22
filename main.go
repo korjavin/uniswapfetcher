@@ -34,7 +34,7 @@ func main() {
 		sugar.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Initialize Uniswap client
+	// Initialize Uniswap client with direct Ethereum RPC calls
 	infuraURL := "https://mainnet.infura.io/v3/" + infuraKey
 	uniswapClient, err := uniswap.NewClient(infuraURL, sugar)
 	if err != nil {
