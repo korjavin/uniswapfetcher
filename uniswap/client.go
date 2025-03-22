@@ -4,10 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sync"
-
-	"github.com/ethereum/go-ethereum/ethclient"
-	"go.uber.org/zap"
 )
 
 // Client is the interface for interacting with Uniswap
@@ -17,114 +13,6 @@ type Client interface {
 
 	// Close closes the client and releases any resources
 	Close()
-}
-
-// UniswapClient implements the Client interface
-type UniswapClient struct {
-	ethClient *ethclient.Client
-	v3Client  V3Client
-	v4Client  V4Client
-	logger    *zap.SugaredLogger
-	mu        sync.Mutex
-}
-
-// NewClient creates a new Uniswap client
-func NewClient(ethURL string, logger *zap.SugaredLogger) (*UniswapClient, error) {
-	ethClient, err := ethclient.Dial(ethURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Ethereum node: %w", err)
-	}
-
-	v3Client, err := NewV3Client(ethClient, logger)
-	if err != nil {
-		ethClient.Close()
-		return nil, fmt.Errorf("failed to create V3 client: %w", err)
-	}
-
-	v4Client, err := NewV4Client(ethClient, logger)
-	if err != nil {
-		ethClient.Close()
-		return nil, fmt.Errorf("failed to create V4 client: %w", err)
-	}
-
-	return &UniswapClient{
-		ethClient: ethClient,
-		v3Client:  v3Client,
-		v4Client:  v4Client,
-		logger:    logger,
-	}, nil
-}
-
-// GetPositions fetches all positions for a given wallet address
-func (c *UniswapClient) GetPositions(ctx context.Context, req PositionRequest) ([]Position, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.logger.Infow("Fetching positions", "wallet", req.WalletAddress.Hex())
-
-	var positions []Position
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var v3Err, v4Err error
-
-	// Fetch V3 positions if requested
-	if req.IncludeV3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			v3Positions, err := c.v3Client.GetPositions(ctx, req.WalletAddress)
-			if err != nil {
-				v3Err = err
-				c.logger.Errorw("Failed to fetch V3 positions", "error", err)
-				return
-			}
-
-			mu.Lock()
-			positions = append(positions, v3Positions...)
-			mu.Unlock()
-
-			c.logger.Infow("Fetched V3 positions", "count", len(v3Positions))
-		}()
-	}
-
-	// Fetch V4 positions if requested
-	if req.IncludeV4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			v4Positions, err := c.v4Client.GetPositions(ctx, req.WalletAddress)
-			if err != nil {
-				v4Err = err
-				c.logger.Errorw("Failed to fetch V4 positions", "error", err)
-				return
-			}
-
-			mu.Lock()
-			positions = append(positions, v4Positions...)
-			mu.Unlock()
-
-			c.logger.Infow("Fetched V4 positions", "count", len(v4Positions))
-		}()
-	}
-
-	wg.Wait()
-
-	// Handle errors
-	if v3Err != nil && v4Err != nil {
-		return nil, fmt.Errorf("failed to fetch positions: V3: %v, V4: %v", v3Err, v4Err)
-	} else if v3Err != nil && req.IncludeV3 {
-		c.logger.Warnw("Failed to fetch V3 positions, returning only V4 positions", "error", v3Err)
-	} else if v4Err != nil && req.IncludeV4 {
-		c.logger.Warnw("Failed to fetch V4 positions, returning only V3 positions", "error", v4Err)
-	}
-
-	c.logger.Infow("Fetched positions", "count", len(positions))
-	return positions, nil
-}
-
-// Close closes the client and releases any resources
-func (c *UniswapClient) Close() {
-	c.ethClient.Close()
 }
 
 // FormatPositionSummary formats a position into a human-readable summary
